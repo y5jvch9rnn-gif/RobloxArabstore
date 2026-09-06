@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>دخول الأدمن — Roblox Arab Store</title>
+  <style>
+    body{font-family: 'Tajawal', system-ui, Arial;background:#0b0b0b;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+    .card{background:#071018;padding:20px;border-radius:12px;width:420px;max-width:95%}
+    input{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #112;background:#021018;color:#fff}
+    .btn{background:#c59a3a;color:#071018;padding:10px 12px;border-radius:8px;border:none;cursor:pointer;font-weight:700;margin-top:12px}
+    .muted{color:#9aa4b2}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+  <div class="card">
+    <h2>دخول الأدمن</h2>
+    <p class="muted">سجل عبر البريد (Magic Link) أو عبر Google. بعد الدخول سيُتحقق إن كنت أدمن.</p>
+
+    <label>بريدك</label>
+    <input id="email" type="email" placeholder="your@email.com" value="yazedbader077@gmail.com">
+    <button id="sendLink" class="btn">أرسل رابط تسجيل الدخول (البريد)</button>
+
+    <div style="margin-top:10px;text-align:center">
+      <button id="googleSign" class="btn" style="background:#2b6cb0;color:#fff">تسجيل بـ Google</button>
+    </div>
+
+    <div id="status" style="margin-top:10px;color:#9aa4b2"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const emailInput = document.getElementById('email');
+    const sendLinkBtn = document.getElementById('sendLink');
+    const googleBtn = document.getElementById('googleSign');
+    const status = document.getElementById('status');
+
+    sendLinkBtn.addEventListener('click', async ()=>{
+      const email = emailInput.value.trim();
+      if (!email) { alert('أدخل الإيميل'); return; }
+      status.textContent = 'جاري إرسال الرابط...';
+      const { data, error } = await supabase.auth.signInWithOtp({ email });
+      if (error) {
+        status.textContent = 'خطأ في الإرسال: ' + error.message;
+        return;
+      }
+      status.textContent = 'تم إرسال رابط تسجيل الدخول؛ افحص بريدك (قد يصل في البريد العشوائي).';
+    });
+
+    // Google OAuth sign-in
+    googleBtn.addEventListener('click', async ()=>{
+      status.textContent = 'فتح نافذة تسجيل Google...';
+      await supabase.auth.signInWithOAuth({ provider: 'google' });
+      // redirect handled by Supabase (callback). When user returns, onAuthStateChange will run.
+    });
+
+    // On auth state change: verify is_admin
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!session) return;
+      const user = session.user;
+      // fetch profile
+      try{
+        const { data: profile, error } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single();
+        if (error || !profile || !profile.is_admin) {
+          status.textContent = 'ليس لديك صلاحيات الأدمن. سيتم تسجيل خروجك.';
+          await supabase.auth.signOut();
+          return;
+        }
+        // success: redirect to site (admin panel will appear)
+        status.textContent = 'تم التحقق. سيتم تحويلك للوحة الأدمن...';
+        // short delay to let session persist
+        setTimeout(()=> window.location.href = '/index.html', 1200);
+      }catch(e){ console.error(e); status.textContent='خطأ أثناء التحقق'; }
+    });
+  </script>
+</body>
+</html>

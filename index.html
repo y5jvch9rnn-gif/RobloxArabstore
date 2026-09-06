@@ -85,19 +85,6 @@
     <footer>تم تصميمه بواسطة بوت تحسين - PayPal integration (server-side recommended)</footer>
   </div>
 
-  <!-- Admin login modal (simplified) -->
-  <div id="adminModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);align-items:center;justify-content:center">
-    <div style="background:#061018;padding:18px;border-radius:10px;max-width:420px;margin:auto;color:#fff">
-      <h3>دخول الأدمن</h3>
-      <input id="adminEmail" placeholder="البريد" style="width:100%;padding:8px;margin-top:8px;border-radius:6px;border:1px solid #111;background:#021018;color:#fff">
-      <input id="adminPass" placeholder="كلمة المرور" type="password" style="width:100%;padding:8px;margin-top:8px;border-radius:6px;border:1px solid #111;background:#021018;color:#fff">
-      <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end">
-        <button id="closeAdmin" class="btn" style="background:#2b2b2b">إلغاء</button>
-        <button id="doAdminLogin" class="btn">تسجيل</button>
-      </div>
-    </div>
-  </div>
-
   <script>
     // Configuration (placeholders) - ضع القيم في بيئة الاستضافة أو استبدل هنا مؤقتا
     const SUPABASE_URL = 'YOUR_SUPABASE_URL';
@@ -129,28 +116,21 @@
       cart.push({ id:btn.dataset.id, name:btn.dataset.name, price:btn.dataset.price }); renderCart();
     }));
 
-    // Admin modal
+    // Admin button now redirects to admin-login page
     const adminBtn = document.getElementById('adminBtn');
-    const adminModal = document.getElementById('adminModal');
-    adminBtn.addEventListener('click', ()=> adminModal.style.display='flex');
-    document.getElementById('closeAdmin').addEventListener('click', ()=> adminModal.style.display='none');
+    adminBtn.addEventListener('click', ()=> window.location.href = '/admin-login.html');
 
-    // Admin login: sign in with Supabase then check profiles.is_admin
-    document.getElementById('doAdminLogin').addEventListener('click', async ()=>{
-      const email = document.getElementById('adminEmail').value;
-      const pass = document.getElementById('adminPass').value;
+    // Show admin panel when current user is admin (if session exists at load)
+    async function checkAdminOnLoad(){
       try{
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
-        if (error) { alert('خطأ في تسجيل الدخول: '+ error.message); return; }
-        const user = data.user;
-        const { data:profile, error:pe } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single();
-        if (pe || !profile || !profile.is_admin){ alert('ليس لديك صلاحيات الأدمن'); return; }
-        // show admin
-        document.getElementById('adminPanel').style.display='block';
-        adminModal.style.display='none';
-        alert('تم تسجيل الدخول كأدمن');
-      }catch(e){ console.error(e); alert('خطأ'); }
-    });
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return; // no signed-in user
+        const user = session.user;
+        // fetch profile
+        const { data: profile, error } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single();
+        if (profile && profile.is_admin) document.getElementById('adminPanel').style.display='block';
+      }catch(e){ console.error(e); }
+    }
 
     // Checkout: client calls server to create order (recommended)
     document.getElementById('checkoutBtn').addEventListener('click', async ()=>{
@@ -175,6 +155,7 @@
 
     // On load
     renderCart();
+    checkAdminOnLoad();
   </script>
 </body>
 </html>
