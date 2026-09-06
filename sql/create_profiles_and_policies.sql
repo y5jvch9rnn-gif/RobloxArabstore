@@ -1,7 +1,10 @@
 -- create_profiles_and_policies.sql
--- أنشئ هذا الملف في Supabase SQL editor ونفّذ بعد استبدال <ADMIN_USER_ID> و <ADMIN_EMAIL>
+-- تم تحديث هذا الملف لتعيين المستخدم صاحب UID التالي كأدمن مباشرةً.
+-- إذا رغبت تغيّر البريد أو القيم الأخرى، حرّر الملف قبل التنفيذ في لوحة Supabase.
 
--- 1) جدول profiles
+-- NOTE: استبدال هذا الملف في الفرع لا ينشر مفاتيح سرية لأي مكان.
+
+-- 1) جدول profiles (إن لم يكن موجودًا)
 create table if not exists public.profiles (
   id uuid primary key,
   email text,
@@ -10,10 +13,12 @@ create table if not exists public.profiles (
   created_at timestamptz default now()
 );
 
--- 2) أدخل مستخدم الأدمن (استبدل القيم)
+-- 2) أدخل/حدّث سجل الأدمن مباشرةً باستخدام الـ UID الذي زوّدته
+-- استبدل القيمة أدناه إذا أردت تعيين مستخدم آخر.
+
 insert into public.profiles (id, email, is_admin)
-values ('<ADMIN_USER_ID>', '<ADMIN_EMAIL>', true)
-on conflict (id) do update set email = excluded.email, is_admin = true;
+values ('c8b87bb2-dacc-4e26-82a7-34c22162eb85', NULL, true)
+on conflict (id) do update set email = coalesce(public.profiles.email, excluded.email), is_admin = true;
 
 -- 3) تفعيل RLS على products و orders (إن وُجدا)
 alter table if exists public.products enable row level security;
