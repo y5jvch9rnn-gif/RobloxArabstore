@@ -10,8 +10,11 @@
     input{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #112;background:#021018;color:#fff}
     .btn{background:#c59a3a;color:#071018;padding:10px 12px;border-radius:8px;border:none;cursor:pointer;font-weight:700;margin-top:12px}
     .muted{color:#9aa4b2}
+    .small{font-size:13px;color:#9aa4b2;margin-top:8px}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- reCAPTCHA placeholder: set RECAPTCHA_SITE_KEY as env and replace in deployment or template -->
+  <script src="https://www.google.com/recaptcha/api.js?render=RECAPTCHA_SITE_KEY"></script>
 </head>
 <body>
   <div class="card">
@@ -27,11 +30,13 @@
     </div>
 
     <div id="status" style="margin-top:10px;color:#9aa4b2"></div>
+    <div class="small">ملاحظة: يستخدم الموقع حماية أساسية ضد البوتات (reCAPTCHA). قد يطلب منك التحقق بالبريد كل مرة حسب إعدادات الجلسة.</div>
   </div>
 
   <script>
     const SUPABASE_URL = 'YOUR_SUPABASE_URL';
     const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    const RECAPTCHA_SITE_KEY = 'RECAPTCHA_SITE_KEY'; // ضع مفتاح الموقع هنا قبل النشر
     const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const emailInput = document.getElementById('email');
@@ -39,10 +44,23 @@
     const googleBtn = document.getElementById('googleSign');
     const status = document.getElementById('status');
 
+    async function verifyRecaptcha(){
+      if (!RECAPTCHA_SITE_KEY || RECAPTCHA_SITE_KEY === 'RECAPTCHA_SITE_KEY') return { ok:true, note: 'recaptcha not configured' };
+      try{
+        const token = await grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: 'admin_login' });
+        const res = await fetch('/api/verify-recaptcha', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token }) });
+        return await res.json();
+      }catch(e){ console.error(e); return { ok:false, error: 'recaptcha error' }; }
+    }
+
     sendLinkBtn.addEventListener('click', async ()=>{
       const email = emailInput.value.trim();
       if (!email) { alert('أدخل الإيميل'); return; }
-      status.textContent = 'جاري إرسال الرابط...';
+      status.textContent = 'جاري التحقق من الحماية ثم إرسال الرابط...';
+
+      const rec = await verifyRecaptcha();
+      if (!rec.ok){ status.textContent = 'لم يتم التحقق ضد البوت: ' + (rec.error || rec.note || 'failed'); return; }
+
       const { data, error } = await supabase.auth.signInWithOtp({ email });
       if (error) {
         status.textContent = 'خطأ في الإرسال: ' + error.message;
@@ -54,15 +72,17 @@
     // Google OAuth sign-in
     googleBtn.addEventListener('click', async ()=>{
       status.textContent = 'فتح نافذة تسجيل Google...';
+      // verify recaptcha before redirecting
+      const rec = await verifyRecaptcha();
+      if (!rec.ok){ status.textContent = 'لم يتم التحقق ضد البوت: ' + (rec.error || rec.note || 'failed'); return; }
       await supabase.auth.signInWithOAuth({ provider: 'google' });
-      // redirect handled by Supabase (callback). When user returns, onAuthStateChange will run.
+      // redirect handled by Supabase
     });
 
     // On auth state change: verify is_admin
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (!session) return;
       const user = session.user;
-      // fetch profile
       try{
         const { data: profile, error } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single();
         if (error || !profile || !profile.is_admin) {
@@ -70,9 +90,7 @@
           await supabase.auth.signOut();
           return;
         }
-        // success: redirect to site (admin panel will appear)
         status.textContent = 'تم التحقق. سيتم تحويلك للوحة الأدمن...';
-        // short delay to let session persist
         setTimeout(()=> window.location.href = '/index.html', 1200);
       }catch(e){ console.error(e); status.textContent='خطأ أثناء التحقق'; }
     });

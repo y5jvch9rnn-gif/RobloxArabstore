@@ -1,19 +1,32 @@
 // server/index.js
 // Express example with PayPal create-order + capture-order and Supabase admin client
-// Deploy as serverless (Vercel/Netlify) or Node server. DO NOT commit secrets.
+// Added: helmet, cors, rate limiting, reCAPTCHA verification endpoint
 
 const express = require('express');
 const fetch = (...args) => import('node-fetch').then(({default:fetch})=>fetch(...args));
 const { createClient } = require('@supabase/supabase-js');
+const helmet = require('helmet');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 app.use(express.json());
+app.use(helmet());
+
+// CORS: restrict by env OR allow all for local testing
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+app.use(cors({ origin: ALLOWED_ORIGIN }));
+
+// Basic rate limiting for sensitive endpoints
+const createOrderLimiter = rateLimit({ windowMs: 60*1000, max: 30, message: 'Too many requests, try again later.' });
+const authLimiter = rateLimit({ windowMs: 60*1000, max: 10, message: 'Too many auth attempts, slow down.' });
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE; // keep secret on server only
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
 const PAYPAL_API = process.env.PAYPAL_API || 'https://api-m.sandbox.paypal.com';
+const RECAPTCHA_SECRET = process.env.RECAPTCHA_SECRET; // Google reCAPTCHA secret
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
 
@@ -26,7 +39,24 @@ async function getPayPalAccessToken(){
   return j.access_token;
 }
 
-app.post('/api/create-order', async (req,res)=>{
+// reCAPTCHA verify endpoint (called by client before critical actions)
+app.post('/api/verify-recaptcha', authLimiter, async (req, res) => {
+  try{
+    const { token } = req.body;
+    if (!RECAPTCHA_SECRET) return res.json({ ok:true, note: 'recaptcha not configured' });
+    if (!token) return res.status(400).json({ ok:false, error: 'token required' });
+    const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${encodeURIComponent(RECAPTCHA_SECRET)}&response=${encodeURIComponent(token)}`;
+    const r = await fetch(verifyUrl, { method: 'POST' });
+    const j = await r.json();
+    // For reCAPTCHA v3 check score and action
+    if (j.success && (typeof j.score === 'undefined' || j.score >= 0.5)){
+      return res.json({ ok:true, score: j.score });
+    }
+    return res.status(403).json({ ok:false, result: j });
+  }catch(err){ console.error(err); return res.status(500).json({ ok:false, error: err.message }); }
+});
+
+app.post('/api/create-order', createOrderLimiter, async (req,res)=>{
   try{
     const { items, total } = req.body;
     // create PayPal order
@@ -42,7 +72,7 @@ app.post('/api/create-order', async (req,res)=>{
   }catch(err){ console.error(err); res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/capture-order', async (req,res)=>{
+app.post('/api/capture-order', createOrderLimiter, async (req,res)=>{
   try{
     const { orderId } = req.body;
     const token = await getPayPalAccessToken();
